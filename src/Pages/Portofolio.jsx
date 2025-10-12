@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 
-import { supabase } from "../supabase"; 
+// Supabase removed: use localStorage fallback for projects/certificates
 
 import PropTypes from "prop-types";
 import { useTheme } from "@mui/material/styles";
@@ -165,30 +165,17 @@ export default function FullWidthTabs() {
   }, []);
 
 
-  const fetchData = useCallback(async () => {
+  // Since Supabase was removed, fetchData will only read from localStorage.
+  // This preserves the previous behavior where localStorage is used as a cache.
+  const fetchData = useCallback(() => {
     try {
-      // Mengambil data dari Supabase secara paralel
-      const [projectsResponse, certificatesResponse] = await Promise.all([
-        supabase.from("projects").select("*").order('id', { ascending: true }),
-        supabase.from("certificates").select("*").order('id', { ascending: true }), 
-      ]);
-
-      // Error handling untuk setiap request
-      if (projectsResponse.error) throw projectsResponse.error;
-      if (certificatesResponse.error) throw certificatesResponse.error;
-
-      // Supabase mengembalikan data dalam properti 'data'
-      const projectData = projectsResponse.data || [];
-      const certificateData = certificatesResponse.data || [];
+      const projectData = JSON.parse(localStorage.getItem('projects') || '[]');
+      const certificateData = JSON.parse(localStorage.getItem('certificates') || '[]');
 
       setProjects(projectData);
       setCertificates(certificateData);
-
-      // Store in localStorage (fungsionalitas ini tetap dipertahankan)
-      localStorage.setItem("projects", JSON.stringify(projectData));
-      localStorage.setItem("certificates", JSON.stringify(certificateData));
     } catch (error) {
-      console.error("Error fetching data from Supabase:", error.message);
+      console.error('Error reading projects/certificates from localStorage:', error);
     }
   }, []);
 

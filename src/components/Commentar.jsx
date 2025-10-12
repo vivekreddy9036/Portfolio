@@ -1,9 +1,61 @@
 import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
-import { createClient } from '@supabase/supabase-js';
+// Supabase removed. We'll use localStorage as a lightweight fallback and a small
+// EventTarget to emulate realtime updates within the client.
 import { MessageCircle, UserCircle2, Loader2, AlertCircle, Send, ImagePlus, X, Pin } from 'lucide-react';
 import AOS from "aos";
 import "aos/dist/aos.css";
-import { supabase } from '../supabase';
+// Simple in-memory/localStorage comment store and emitter
+const commentEmitter = new EventTarget();
+
+const STORAGE_KEY = 'portfolio_comments';
+
+const readCommentsFromStorage = () => {
+    try {
+        return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    } catch (e) {
+        return [];
+    }
+};
+
+const writeCommentsToStorage = (comments) => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(comments));
+    commentEmitter.dispatchEvent(new Event('change'));
+};
+
+// A tiny helper to simulate uploading an image: store as data URL in localStorage
+// (not suitable for production) and return an object URL.
+const uploadImageToLocal = async (imageFile) => {
+    if (!imageFile) return null;
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            // Save the data URL alongside a generated id
+            const storedImages = JSON.parse(localStorage.getItem('profile_images') || '{}');
+            const key = `img_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
+            storedImages[key] = reader.result;
+            localStorage.setItem('profile_images', JSON.stringify(storedImages));
+            try {
+                const blob = dataURLToBlob(reader.result);
+                const url = URL.createObjectURL(blob);
+                resolve(url);
+            } catch (e) {
+                resolve(reader.result);
+            }
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(imageFile);
+    });
+};
+
+function dataURLToBlob(dataURL) {
+    const parts = dataURL.split(',');
+    const mime = parts[0].match(/:(.*?);/)[1];
+    const binary = atob(parts[1]);
+    const len = binary.length;
+    const u8 = new Uint8Array(len);
+    for (let i = 0; i < len; i++) u8[i] = binary.charCodeAt(i);
+    return new Blob([u8], { type: mime });
+}
 
 
 const Comment = memo(({ comment, formatDate, index, isPinned = false }) => (
@@ -239,92 +291,38 @@ const Komentar = () => {
         });
     }, []);
 
-    // Fetch pinned comment
+    // Load pinned comment from storage (if any)
     useEffect(() => {
-        const fetchPinnedComment = async () => {
-            try {
-                const { data, error } = await supabase
-                    .from('portfolio_comments')
-                    .select('*')
-                    .eq('is_pinned', true)
-                    .single();
-                
-                if (error && error.code !== 'PGRST116') {
-                    console.error('Error fetching pinned comment:', error);
-                    return;
-                }
-                
-                if (data) {
-                    setPinnedComment(data);
-                }
-            } catch (error) {
-                console.error('Error fetching pinned comment:', error);
-            }
-        };
-
-        fetchPinnedComment();
+        try {
+            const all = readCommentsFromStorage();
+            const pinned = all.find(c => c.is_pinned);
+            if (pinned) setPinnedComment(pinned);
+        } catch (e) {
+            console.error('Error reading pinned comment from storage', e);
+        }
     }, []);
 
-    // Fetch regular comments (excluding pinned) and set up real-time subscription
+    // Fetch regular comments (excluding pinned) and subscribe to storage changes
     useEffect(() => {
-        const fetchComments = async () => {
-            const { data, error } = await supabase
-                .from('portfolio_comments')
-                .select('*')
-                .eq('is_pinned', false)
-                .order('created_at', { ascending: false });
-            
-            if (error) {
-                console.error('Error fetching comments:', error);
-                return;
-            }
-            
-            setComments(data || []);
+        const fetchComments = () => {
+            const all = readCommentsFromStorage();
+            const regular = all.filter(c => !c.is_pinned).sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+            setComments(regular || []);
         };
 
         fetchComments();
 
-        // Set up real-time subscription
-        const subscription = supabase
-            .channel('portfolio_comments')
-            .on('postgres_changes', 
-                { 
-                    event: '*', 
-                    schema: 'public', 
-                    table: 'portfolio_comments',
-                    filter: 'is_pinned=eq.false'
-                }, 
-                () => {
-                    fetchComments(); // Refresh comments when changes occur
-                }
-            )
-            .subscribe();
+        const onChange = () => fetchComments();
+        commentEmitter.addEventListener('change', onChange);
 
         return () => {
-            subscription.unsubscribe();
+            commentEmitter.removeEventListener('change', onChange);
         };
     }, []);
 
     const uploadImage = useCallback(async (imageFile) => {
-        if (!imageFile) return null;
-        
-        const fileExt = imageFile.name.split('.').pop();
-        const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
-        const filePath = `profile-images/${fileName}`;
-
-        const { error: uploadError } = await supabase.storage
-            .from('profile-images')
-            .upload(filePath, imageFile);
-
-        if (uploadError) {
-            throw uploadError;
-        }
-
-        const { data } = supabase.storage
-            .from('profile-images')
-            .getPublicUrl(filePath);
-
-        return data.publicUrl;
+        // Local fallback: store as data URL and return an object URL
+        return await uploadImageToLocal(imageFile);
     }, []);
 
     const handleCommentSubmit = useCallback(async ({ newComment, userName, imageFile }) => {
@@ -333,22 +331,18 @@ const Komentar = () => {
         
         try {
             const profileImageUrl = await uploadImage(imageFile);
-            
-            const { error } = await supabase
-                .from('portfolio_comments')
-                .insert([
-                    {
-                        content: newComment,
-                        user_name: userName,
-                        profile_image: profileImageUrl,
-                        is_pinned: false,
-                        created_at: new Date().toISOString()
-                    }
-                ]);
-
-            if (error) {
-                throw error;
-            }
+            // Insert into localStorage-backed store
+            const all = readCommentsFromStorage();
+            const newEntry = {
+                id: `${Date.now()}_${Math.random().toString(36).slice(2,8)}`,
+                content: newComment,
+                user_name: userName,
+                profile_image: profileImageUrl,
+                is_pinned: false,
+                created_at: new Date().toISOString()
+            };
+            all.push(newEntry);
+            writeCommentsToStorage(all);
         } catch (error) {
             setError('Failed to post comment. Please try again.');
             console.error('Error adding comment: ', error);
