@@ -273,24 +273,13 @@ const AboutPage = () => {
         </a>
       </div>
 
-      <style jsx>{`
-        @keyframes float {
-          0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-20px); }
-        }
-        @keyframes spin-slower {
-          to { transform: rotate(360deg); }
-        }
-        .animate-bounce-slow {
-          animation: bounce 3s infinite;
-        }
-        .animate-pulse-slow {
-          animation: pulse 3s infinite;
-        }
-        .animate-spin-slower {
-          animation: spin-slower 8s linear infinite;
-        }
-      `}</style>
+      <style>
+        {`@keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-20px); } }
+        @keyframes spin-slower { to { transform: rotate(360deg); } }
+        .animate-bounce-slow { animation: bounce 3s infinite; }
+        .animate-pulse-slow { animation: pulse 3s infinite; }
+        .animate-spin-slower { animation: spin-slower 8s linear infinite; }`}
+      </style>
     </div>
   );
 };
