@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Menu, X } from "lucide-react";
+import LogoImg from "../assets/LOGO.png";
 
 const Navbar = () => {
     const [isOpen, setIsOpen] = useState(false);
@@ -82,9 +83,9 @@ const Navbar = () => {
                         <a
                             href="#Home"
                             onClick={(e) => scrollToSection(e, "#Home")}
-                            className="text-xl font-bold bg-gradient-to-r from-[#a855f7] to-[#6366f1] bg-clip-text text-transparent"
+                            className="flex items-center gap-3"
                         >
-                            Pinnemcharla Sai Vivek Reddy
+                            <img src={LogoImg} alt="Logo" className="h-10 md:h-18 lg:h-50 w-auto object-contain" />
                         </a>
                     </div>
         
